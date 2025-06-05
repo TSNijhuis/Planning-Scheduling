@@ -95,6 +95,52 @@ def apply_disruptions(schedule, disruption_rate=0.1):
         disrupted_schedule[machine] = new_jobs
     return disrupted_schedule
 
+def apply_additional_disruptions(schedule, jobs, breakdown_rate=0.1, demand_rate=0.05, failure_rate=0.05, cancel_rate=0.05):
+    disrupted_schedule = copy.deepcopy(schedule)
+    job_ids = [job.id for job in jobs]
+
+    # Machine breakdown: randomly delay all jobs on a machine
+    for machine in disrupted_schedule:
+        if random.random() < breakdown_rate:
+            delay = random.randint(4, 12)
+            print(f"⚠️ Machine breakdown on {machine}: All jobs delayed by {delay}h")
+            disrupted_schedule[machine] = [
+                (job_id, start + delay, end + delay) for job_id, start, end in disrupted_schedule[machine]
+            ]
+
+    # Unexpected demand: add a new job to a random machine
+    if random.random() < demand_rate:
+        machine = random.choice(list(disrupted_schedule.keys()))
+        new_job_id = f"NEW{random.randint(100,999)}"
+        last_end = max([end for _, _, end in disrupted_schedule[machine]], default=0)
+        proc_time = random.randint(5, 15)
+        changeover = random.choice([3, 24])
+        start = last_end + changeover
+        end = start + proc_time
+        disrupted_schedule[machine].append((new_job_id, start, end))
+        print(f"⚠️ Unexpected demand: Added job {new_job_id} to {machine}")
+
+    # Product failure: randomly re-schedule a job (add rework)
+    if random.random() < failure_rate:
+        machine = random.choice(list(disrupted_schedule.keys()))
+        if disrupted_schedule[machine]:
+            failed_job = random.choice(disrupted_schedule[machine])
+            rework_time = random.randint(3, 8)
+            new_start = failed_job[2]
+            new_end = new_start + rework_time
+            disrupted_schedule[machine].append((failed_job[0] + "_REWORK", new_start, new_end))
+            print(f"⚠️ Product failure: Rework for {failed_job[0]} on {machine}")
+
+    # Order cancellation: randomly remove a job
+    if random.random() < cancel_rate:
+        machine = random.choice(list(disrupted_schedule.keys()))
+        if disrupted_schedule[machine]:
+            idx = random.randrange(len(disrupted_schedule[machine]))
+            cancelled_job = disrupted_schedule[machine].pop(idx)
+            print(f"⚠️ Order cancellation: Removed {cancelled_job[0]} from {machine}")
+
+    return disrupted_schedule
+
 # VNS Optimization Loop
 def vns_optimization(jobs, iterations=100):
     best_jobs = copy.deepcopy(jobs)
@@ -128,6 +174,35 @@ def perturb_jobs(jobs):
         new_jobs[a_idx], new_jobs[b_idx] = new_jobs[b_idx], new_jobs[a_idx]
     return new_jobs
 
+# Machine group data
+MACHINE_GROUPS = {
+    '300 cm': {
+        'num_machines': 12,
+        'weekly_capacity': 500,
+        'utilization': 0.95,
+        'production_speed': 2.976  # metres per hour
+    },
+    '140 cm': {
+        'num_machines': 16,
+        'weekly_capacity': 900,
+        'utilization': 0.62,
+        'production_speed': 5.357
+    },
+    'Jacquard': {
+        'num_machines': 3,
+        'weekly_capacity': 750,
+        'utilization': 0.53,
+        'production_speed': 4.464
+    }
+}
+
+def print_machine_group_info():
+    print("===== Machine Group Information =====")
+    print("Group      #Machines  WeeklyCap  Utilization  ProdSpeed(m/h)")
+    for group, info in MACHINE_GROUPS.items():
+        print(f"{group:10} {info['num_machines']:>9}  {info['weekly_capacity']:>9}  {info['utilization']*100:>9.1f}%  {info['production_speed']:>12.3f}")
+    print()
+
 # Print schedule
 def print_schedule(schedule, title):
     print(f"\n===== {title} =====")
@@ -138,6 +213,7 @@ def print_schedule(schedule, title):
 
 # Run all
 if __name__ == "__main__":
+    print_machine_group_info()
     random.seed(42)
     jobs = generate_jobs()
 
@@ -146,6 +222,10 @@ if __name__ == "__main__":
 
     disrupted = apply_disruptions(initial_schedule, disruption_rate=0.15)
     print_schedule(disrupted, "Disrupted Schedule")
+
+    # Apply additional disruptions
+    further_disrupted = apply_additional_disruptions(disrupted, jobs)
+    print_schedule(further_disrupted, "Further Disrupted Schedule")
 
     optimized_schedule = vns_optimization(jobs, iterations=50)
     print_schedule(optimized_schedule, "Optimized Schedule (VNS)")
