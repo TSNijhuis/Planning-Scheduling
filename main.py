@@ -1,6 +1,7 @@
 import random
 from collections import defaultdict
 import copy
+import numpy as np  # <-- Add this import
 
 # Job structure
 class Job:
@@ -13,11 +14,14 @@ class Job:
 
 # Use capacity-based distribution for job generation
 def generate_jobs():
-    job_distribution = {
-        '300 cm': 14,
-        '140 cm': 23,
-        'Jacquard': 3
-    }
+    # Probabilities from your analysis
+    probs = [0.36, 0.564, 0.075]
+    machine_types = ['300 cm', '140 cm', 'Jacquard']
+    total_jobs = 40
+
+    # Multinomial distribution for job counts
+    job_counts = np.random.multinomial(total_jobs, probs)
+    job_distribution = dict(zip(machine_types, job_counts))
 
     base_times = {
         '300 cm': 10,
@@ -38,6 +42,8 @@ def generate_jobs():
             jobs.append(Job(f"J{job_count}", machine_type, proc_time, changeover_time, due_date))
             job_count += 1
 
+    # Print the actual distribution for transparency
+    print("Job distribution this run:", job_distribution)
     return jobs
 
 # EDD or SPT+changeover scheduling
