@@ -181,10 +181,16 @@ def print_schedule(schedule, title):
             print(f"  {job_id}: Start at {start}h, End at {end}h")
 
 # Gantt chart visualization
-def plot_gantt_chart(schedule, title="Final Job Shop Schedule"):
-    fig, ax = plt.subplots(figsize=(14, 8))
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import random
+
+def plot_gantt_chart(schedule, title="Final Job Shop Schedule", save_path="final_schedule.png"):
+    fig, ax = plt.subplots(figsize=(12, 8))
     colors = {}
-    machine_names = sorted(schedule.keys())
+
+    machine_names = list(schedule.keys())
+    machine_names.sort()
     yticks = []
     yticklabels = []
 
@@ -203,8 +209,11 @@ def plot_gantt_chart(schedule, title="Final Job Shop Schedule"):
     ax.set_xlabel("Time (hours)")
     ax.set_title(title)
     ax.grid(True)
+
     plt.tight_layout()
+    plt.savefig(save_path)
     plt.show()
+
 
 # Run all
 if __name__ == "__main__":
