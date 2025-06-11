@@ -1,13 +1,14 @@
 import random
 import copy
 import numpy as np
-from collections import defaultdict, deque
+import matplotlib.pyplot as plt
+from collections import defaultdict
 
 # Job structure
 class Job:
-    def __init__(self, job_id, machine_group, processing_time, changeover_time, due_date):
+    def __init__(self, job_id, machine_type, processing_time, changeover_time, due_date):
         self.id = job_id
-        self.machine_group = machine_group
+        self.machine_type = machine_type
         self.processing_time = processing_time
         self.changeover_time = changeover_time
         self.due_date = due_date
@@ -19,7 +20,7 @@ MACHINE_GROUPS = {
     'Jacquard': {'num_machines': 3, 'weekly_capacity': 750, 'utilization': 0.53, 'production_speed': 4.464}
 }
 
-# Generate jobs
+# Generate jobs based on machine capacity distribution
 def generate_jobs():
     probs = [0.36, 0.564, 0.075]
     machine_types = ['300 cm', '140 cm', 'Jacquard']
@@ -38,6 +39,7 @@ def generate_jobs():
             due_date = max(int(proc_time + random.gauss(6, 2)), proc_time + 1)
             jobs.append(Job(f"J{job_count}", machine_type, proc_time, changeover_time, due_date))
             job_count += 1
+
     print("Job distribution this run:", job_distribution)
     return jobs
 
@@ -47,10 +49,10 @@ def assign_jobs_to_individual_machines(jobs):
     machine_counters = defaultdict(int)
 
     for job in jobs:
-        group = job.machine_group
+        group = job.machine_type
         machine_index = machine_counters[group] % MACHINE_GROUPS[group]['num_machines']
-        machine_id = f"{group}_{machine_index}"
-        machine_assignments[machine_id].append(job)
+        machine_name = f"{group}_{machine_index}"
+        machine_assignments[machine_name].append(job)
         machine_counters[group] += 1
 
     return machine_assignments
@@ -67,15 +69,15 @@ def schedule_machine(machine_jobs):
         current_time = end
     return schedule
 
-# Full scheduling for all machines
+# Shifting Bottleneck Heuristic with parallel machines
 def shifting_bottleneck_parallel(jobs):
-    assignments = assign_jobs_to_individual_machines(jobs)
+    machine_assignments = assign_jobs_to_individual_machines(jobs)
     final_schedule = {}
-    for machine_id, job_list in assignments.items():
-        final_schedule[machine_id] = schedule_machine(job_list)
+    for machine, job_list in machine_assignments.items():
+        final_schedule[machine] = schedule_machine(job_list)
     return final_schedule
 
-# Disruption simulation
+# Apply disruptions to the schedule
 def apply_disruptions(schedule, disruption_rate=0.1):
     disrupted_schedule = {}
     for machine, jobs in schedule.items():
@@ -90,7 +92,7 @@ def apply_disruptions(schedule, disruption_rate=0.1):
         disrupted_schedule[machine] = new_jobs
     return disrupted_schedule
 
-# Additional disruptions
+# Apply additional disruptions
 def apply_additional_disruptions(schedule, jobs, breakdown_rate=0.1, demand_rate=0.05, failure_rate=0.05, cancel_rate=0.05):
     disrupted_schedule = copy.deepcopy(schedule)
     job_ids = [job.id for job in jobs]
@@ -131,7 +133,7 @@ def apply_additional_disruptions(schedule, jobs, breakdown_rate=0.1, demand_rate
 
     return disrupted_schedule
 
-# VNS optimization
+# VNS Optimization
 def vns_optimization(jobs, iterations=100):
     best_jobs = copy.deepcopy(jobs)
     best_schedule = shifting_bottleneck_parallel(best_jobs)
@@ -154,9 +156,9 @@ def calculate_total_makespan(schedule):
 
 def perturb_jobs(jobs):
     new_jobs = jobs[:]
-    machine_types = list(set(job.machine_group for job in new_jobs))
+    machine_types = list(set(job.machine_type for job in new_jobs))
     target_machine = random.choice(machine_types)
-    candidates = [j for j in new_jobs if j.machine_group == target_machine]
+    candidates = [j for j in new_jobs if j.machine_type == target_machine]
     if len(candidates) >= 2:
         a, b = random.sample(candidates, 2)
         a_idx = new_jobs.index(a)
@@ -173,10 +175,36 @@ def print_machine_group_info():
 
 def print_schedule(schedule, title):
     print(f"\n===== {title} =====")
-    for machine, sched in schedule.items():
+    for machine, sched in sorted(schedule.items()):
         print(f"\nMachine: {machine}")
         for job_id, start, end in sched:
             print(f"  {job_id}: Start at {start}h, End at {end}h")
+
+# Gantt chart visualization
+def plot_gantt_chart(schedule, title="Final Job Shop Schedule"):
+    fig, ax = plt.subplots(figsize=(14, 8))
+    colors = {}
+    machine_names = sorted(schedule.keys())
+    yticks = []
+    yticklabels = []
+
+    for i, machine in enumerate(machine_names):
+        jobs = schedule[machine]
+        yticks.append(i)
+        yticklabels.append(machine)
+        for job_id, start, end in jobs:
+            if job_id not in colors:
+                colors[job_id] = (random.random(), random.random(), random.random())
+            ax.barh(i, end - start, left=start, height=0.4, color=colors[job_id])
+            ax.text(start + (end - start) / 2, i, job_id, va='center', ha='center', color='white', fontsize=8)
+
+    ax.set_yticks(yticks)
+    ax.set_yticklabels(yticklabels)
+    ax.set_xlabel("Time (hours)")
+    ax.set_title(title)
+    ax.grid(True)
+    plt.tight_layout()
+    plt.show()
 
 # Run all
 if __name__ == "__main__":
@@ -195,4 +223,6 @@ if __name__ == "__main__":
 
     optimized_schedule = vns_optimization(jobs, iterations=50)
     print_schedule(optimized_schedule, "Optimized Schedule (VNS)")
+
+    plot_gantt_chart(optimized_schedule, title="Optimized Schedule (VNS)")
 
