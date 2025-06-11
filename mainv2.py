@@ -22,21 +22,30 @@ MACHINE_GROUPS = {
 
 # Generate jobs based on machine capacity distribution
 def generate_jobs():
-    probs = [0.36, 0.564, 0.075]
-    machine_types = ['300 cm', '140 cm', 'Jacquard']
     total_jobs = 40
+    mean_order_size = 400
+    std_order_size = 40   #Can be adjusted accordingly by Kvadrat
+    min_order_size = 200
+
+    machine_types = ['140 cm', '300 cm', 'Jacquard']
+    probs = [0.564, 0.360, 0.075]
+
+    # Multinomial distribution for job counts per machine type
     job_counts = np.random.multinomial(total_jobs, probs)
     job_distribution = dict(zip(machine_types, job_counts))
 
-    base_times = {'300 cm': 10, '140 cm': 6, 'Jacquard': 18}
     jobs = []
     job_count = 1
+
     for machine_type, num_jobs in job_distribution.items():
+        prod_speed = MACHINE_GROUPS[machine_type]['production_speed']
         for _ in range(num_jobs):
-            base_time = base_times[machine_type]
-            proc_time = int(random.triangular(4, base_time, base_time + 5))
+            # Generate order size (meters), min 200
+            order_size = max(int(np.random.normal(mean_order_size, std_order_size)), min_order_size)
+            # Processing time in hours
+            proc_time = int(order_size / prod_speed)
             changeover_time = 3 if random.random() < 0.8 else 24
-            due_date = max(int(proc_time + random.gauss(6, 2)), proc_time + 1)
+            due_date = 168  
             jobs.append(Job(f"J{job_count}", machine_type, proc_time, changeover_time, due_date))
             job_count += 1
 
@@ -46,14 +55,31 @@ def generate_jobs():
 # Assign jobs to individual machines in each group
 def assign_jobs_to_individual_machines(jobs):
     machine_assignments = defaultdict(list)
-    machine_counters = defaultdict(int)
+    machine_types = set(job.machine_type for job in jobs)
+    machine_indices = {mt: [f"{mt}_{i}" for i in range(MACHINE_GROUPS[mt]['num_machines'])] for mt in machine_types}
+
+    # Sort jobs by due date (EDD)
+    jobs = sorted(jobs, key=lambda job: job.due_date)
 
     for job in jobs:
         group = job.machine_type
-        machine_index = machine_counters[group] % MACHINE_GROUPS[group]['num_machines']
-        machine_name = f"{group}_{machine_index}"
-        machine_assignments[machine_name].append(job)
-        machine_counters[group] += 1
+        best_machine = None
+        earliest_start = float('inf')
+        for machine in machine_indices[group]:
+            # Simulate adding job to this machine and get its start time
+            temp_jobs = machine_assignments[machine] + [job]
+            schedule = schedule_machine(temp_jobs)
+            for job_id, start, end in schedule:
+                if job_id == job.id and start < earliest_start:
+                    # Check capacity constraint
+                    total_proc = sum(j.processing_time for j in machine_assignments[machine]) + job.processing_time
+                    if total_proc <= MACHINE_GROUPS[group]['weekly_capacity']:
+                        earliest_start = start
+                        best_machine = machine
+        if best_machine:
+            machine_assignments[best_machine].append(job)
+        else:
+            print(f"⚠️ Warning: Could not assign job {job.id} to any {group} machine without exceeding weekly capacity.")
 
     return machine_assignments
 
@@ -62,8 +88,11 @@ def schedule_machine(machine_jobs):
     machine_jobs.sort(key=lambda job: job.due_date)
     schedule = []
     current_time = 0
-    for job in machine_jobs:
-        start = current_time + job.changeover_time
+    for idx, job in enumerate(machine_jobs):
+        if idx == 0:
+            start = 0
+        else:
+            start = current_time + job.changeover_time
         end = start + job.processing_time
         schedule.append((job.id, start, end))
         current_time = end
@@ -72,66 +101,104 @@ def schedule_machine(machine_jobs):
 # Shifting Bottleneck Heuristic with parallel machines
 def shifting_bottleneck_parallel(jobs):
     machine_assignments = assign_jobs_to_individual_machines(jobs)
+    all_machines = list(machine_assignments.keys())
+    improved = True
+
+    while improved:
+        improved = False
+        lateness_dict = {}
+        temp_schedules = {}
+
+        # Schedule each machine and calculate its max lateness
+        for machine in all_machines:
+            schedule = schedule_machine(machine_assignments[machine])
+            temp_schedules[machine] = schedule
+            max_lateness = 0
+            for job_id, start, end in schedule:
+                job = next(j for j in machine_assignments[machine] if j.id == job_id)
+                lateness = max(0, end - job.due_date)
+                if lateness > max_lateness:
+                    max_lateness = lateness
+            lateness_dict[machine] = max_lateness
+
+        # Find the bottleneck machine (with highest max lateness)
+        bottleneck_machine = max(lateness_dict, key=lateness_dict.get)
+        bottleneck_jobs = machine_assignments[bottleneck_machine][:]
+        group = bottleneck_machine.split('_')[0]
+        group_machines = [m for m in all_machines if m.startswith(group)]
+
+        # Try to move each job to any earlier slot on any machine of the same type
+        for job in bottleneck_jobs:
+            current_schedule = schedule_machine(machine_assignments[bottleneck_machine])
+            current_start = None
+            for job_id, start, end in current_schedule:
+                if job_id == job.id:
+                    current_start = start
+                    break
+
+            for other_machine in group_machines:
+                if other_machine == bottleneck_machine:
+                    continue
+                # Try inserting job at every possible position
+                for insert_pos in range(len(machine_assignments[other_machine]) + 1):
+                    # Remove from current machine
+                    machine_assignments[bottleneck_machine].remove(job)
+                    # Insert into new machine at position insert_pos
+                    machine_assignments[other_machine].insert(insert_pos, job)
+
+                    # Recalculate schedule for other_machine
+                    new_schedule = schedule_machine(machine_assignments[other_machine])
+                    new_start = None
+                    for job_id, start, end in new_schedule:
+                        if job_id == job.id:
+                            new_start = start
+                            break
+
+                    # Check capacity constraint
+                    total_proc = sum(j.processing_time for j in machine_assignments[other_machine])
+                    if (new_start is not None and current_start is not None and
+                        new_start < current_start and
+                        total_proc <= MACHINE_GROUPS[group]['weekly_capacity']):
+                        improved = True
+                        break
+                    else:
+                        # Undo the move
+                        machine_assignments[other_machine].pop(insert_pos)
+                        machine_assignments[bottleneck_machine].append(job)
+                if improved:
+                    break
+            if improved:
+                break  # Only one move per iteration
+
+    # Final scheduling after all improvements
     final_schedule = {}
-    for machine, job_list in machine_assignments.items():
-        final_schedule[machine] = schedule_machine(job_list)
+    for machine in all_machines:
+        final_schedule[machine] = schedule_machine(machine_assignments[machine])
     return final_schedule
 
-# Apply disruptions to the schedule
-def apply_disruptions(schedule, disruption_rate=0.1):
-    disrupted_schedule = {}
-    for machine, jobs in schedule.items():
-        new_jobs = []
-        for job_id, start, end in jobs:
-            if random.random() < disruption_rate:
-                delay = random.randint(1, 3)
-                print(f"⚠️ Disruption: Delaying {job_id} on {machine} by {delay}h")
-                start += delay
-                end += delay
-            new_jobs.append((job_id, start, end))
-        disrupted_schedule[machine] = new_jobs
-    return disrupted_schedule
-
 # Apply additional disruptions
-def apply_additional_disruptions(schedule, jobs, breakdown_rate=0.1, demand_rate=0.05, failure_rate=0.05, cancel_rate=0.05):
-    disrupted_schedule = copy.deepcopy(schedule)
-    job_ids = [job.id for job in jobs]
+def apply_additional_disruptions(jobs,  demand_rate=0.05):
 
-    for machine in disrupted_schedule:
-        if random.random() < breakdown_rate:
-            delay = random.randint(4, 12)
-            print(f"⚠️ Machine breakdown on {machine}: All jobs delayed by {delay}h")
-            disrupted_schedule[machine] = [(job_id, start + delay, end + delay) for job_id, start, end in disrupted_schedule[machine]]
 
     if random.random() < demand_rate:
-        machine = random.choice(list(disrupted_schedule.keys()))
+        machine_types = ['140 cm', '300 cm', 'Jacquard']
+        probs = [0.564, 0.360, 0.075]
+        # Randomly select machine type for the new job based on probabilities
+        machine_type = np.random.choice(machine_types, p=probs)
+        prod_speed = MACHINE_GROUPS[machine_type]['production_speed']
+        mean_order_size = 400
+        std_order_size = 40   # Can be adjusted accordingly by Kvadrat
+        min_order_size = 200
+        order_size = max(int(np.random.normal(mean_order_size, std_order_size)), min_order_size)
+        proc_time = int(order_size / prod_speed)
+        changeover_time = 3 if random.random() < 0.8 else 24
+        due_date = int(proc_time + random.gauss(6, 2)) # Can be adjusted accordingly by Kvadrat
         new_job_id = f"NEW{random.randint(100,999)}"
-        last_end = max([end for _, _, end in disrupted_schedule[machine]], default=0)
-        proc_time = random.randint(5, 15)
-        changeover = random.choice([3, 24])
-        start = last_end + changeover
-        end = start + proc_time
-        disrupted_schedule[machine].append((new_job_id, start, end))
-        print(f"⚠️ Unexpected demand: Added job {new_job_id} to {machine}")
+        # Add the new job to the jobs list
+        jobs.append(Job(new_job_id, machine_type, proc_time, changeover_time, due_date))
+        print(f"⚠️ Unexpected demand: Added job {new_job_id} ({machine_type}, {order_size}m, {proc_time}h) to jobs list")
 
-    if random.random() < failure_rate:
-        machine = random.choice(list(disrupted_schedule.keys()))
-        if disrupted_schedule[machine]:
-            failed_job = random.choice(disrupted_schedule[machine])
-            rework_time = random.randint(3, 8)
-            new_start = failed_job[2]
-            new_end = new_start + rework_time
-            disrupted_schedule[machine].append((failed_job[0] + "_REWORK", new_start, new_end))
-            print(f"⚠️ Product failure: Rework for {failed_job[0]} on {machine}")
-
-    if random.random() < cancel_rate:
-        machine = random.choice(list(disrupted_schedule.keys()))
-        if disrupted_schedule[machine]:
-            idx = random.randrange(len(disrupted_schedule[machine]))
-            cancelled_job = disrupted_schedule[machine].pop(idx)
-            print(f"⚠️ Order cancellation: Removed {cancelled_job[0]} from {machine}")
-
-    return disrupted_schedule
+    return jobs
 
 # VNS Optimization
 def vns_optimization(jobs, iterations=100):
@@ -214,6 +281,23 @@ def plot_gantt_chart(schedule, title="Final Job Shop Schedule", save_path="final
     plt.savefig(save_path)
     plt.show()
 
+def run_full_scheduling_pipeline(jobs, vns_iterations=50):
+    # 1. Assign jobs to machines and schedule using EDD
+    machine_assignments = assign_jobs_to_individual_machines(jobs)
+    initial_schedule = {}
+    for machine, job_list in machine_assignments.items():
+        initial_schedule[machine] = schedule_machine(job_list)
+    print_schedule(initial_schedule, "Initial EDD Schedule (per machine)")
+
+    # 2. Shifting Bottleneck Heuristic (SBH)
+    sbh_schedule = shifting_bottleneck_parallel(jobs)
+    print_schedule(sbh_schedule, "Shifting Bottleneck Heuristic Schedule")
+
+    # 3. VNS Optimization
+    optimized_schedule = vns_optimization(jobs, iterations=vns_iterations)
+    print_schedule(optimized_schedule, "Optimized Schedule (VNS)")
+
+    return initial_schedule, sbh_schedule, optimized_schedule
 
 # Run all
 if __name__ == "__main__":
@@ -221,17 +305,21 @@ if __name__ == "__main__":
     random.seed(42)
     jobs = generate_jobs()
 
-    initial_schedule = shifting_bottleneck_parallel(jobs)
-    print_schedule(initial_schedule, "Initial Schedule with Parallel Machines")
+    # 1. Print initial schedule
+    print("\n--- Initial Schedule ---")
+    initial_schedule, _, _ = run_full_scheduling_pipeline(jobs, vns_iterations=0)
 
-    disrupted = apply_disruptions(initial_schedule, disruption_rate=0.15)
-    print_schedule(disrupted, "Disrupted Schedule")
+    # 2. Apply disruptions (adds new job to jobs list)
+    print("\n--- Applying Disruption (Unexpected Demand) ---")
+    apply_additional_disruptions(jobs, demand_rate=0.05)  # Set demand_rate=1.0 to guarantee a new job is added
 
-    further_disrupted = apply_additional_disruptions(disrupted, jobs)
-    print_schedule(further_disrupted, "Further Disrupted Schedule")
+    # 3. Print new schedule with the disruption
+    print("\n--- Fixed Schedule After Disruption ---")
+    fixed_schedule, _, _ = run_full_scheduling_pipeline(jobs, vns_iterations=0)
 
-    optimized_schedule = vns_optimization(jobs, iterations=50)
-    print_schedule(optimized_schedule, "Optimized Schedule (VNS)")
+    # 4. Gantt chart for the optimized schedule
+    plot_gantt_chart(fixed_schedule, title="Fixed Schedule After Disruption")
 
-    plot_gantt_chart(optimized_schedule, title="Optimized Schedule (VNS)")
+    # 4. Gantt chart for the optimized schedule
+    plot_gantt_chart(fixed_schedule, title="Fixed Schedule After Disruption")
 
