@@ -35,12 +35,12 @@ def simulate_over_time(total_hours=168, disruption_rates=(0.05, 0.05, 0.05)):
 
     # Plot the initial schedule
     max_late = calculate_max_lateness(initial_schedule, jobs)
-    plot_gantt_chart(
+    """plot_gantt_chart(
         initial_schedule,
         title="Initial Gantt Chart before simulation",
         save_path="gantt_initial.png",
         max_lateness=max_late
-    )
+    )"""
 
     for t in range(total_hours):
         print(f"\n=== Time step {t} ===")
@@ -151,30 +151,38 @@ def simulate_over_time(total_hours=168, disruption_rates=(0.05, 0.05, 0.05)):
                 combined_schedule[machine] = actual_jobs + planned_jobs
 
             max_late = calculate_max_lateness(combined_schedule, jobs)
-            plot_gantt_chart(
+            """plot_gantt_chart(
                 combined_schedule,
                 title=f"Gantt Chart after disruption at t={t}",
                 save_path=f"gantt_after_disruption_t{t}.png",
                 max_lateness=max_late
-            )
+            )"""
             
     # Print summary
     print("\n=== Simulation finished ===")
     for job in jobs:
         print(f"{job.id}: {job.status}, start={job.start_time}, end={job.end_time}")
 
+    return max_late
+
 if __name__ == "__main__":
     results = []
-    Total_max_lateness = 0
-    Average_max_lateness = 0
-    for exp in range(52):  # Run 52 experiments (one year)
-        print(f"\n=== Experiment {exp+1} ===")
-        random.seed(42 + exp) 
-        # Optionally, collect metrics like max lateness
-        max_lateness = simulate_over_time(total_hours=168, disruption_rates=(0.017, 0.0089, 0.0013))
-        Total_max_lateness += max_lateness
-        Average_max_lateness = Total_max_lateness / (52)
+    lateness_values = []  # Store all max_lateness values
+    Max_Max_lateness = float('-inf')
+
+    for week in range(1, 53):  # 52 unique seeds, one for each week
+        print(f"\n=== Experiment (Week) {week} ===")
+        random.seed(week)  # Set unique, reproducible seed for each run
+        max_lateness = simulate_over_time(
+            total_hours=168,
+            disruption_rates=(0.017, 0.0089, 0.0013)
+        )
+        lateness_values.append(max_lateness)
         Max_Max_lateness = max(Max_Max_lateness, max_lateness)
-        results.append((Max_Max_lateness, Average_max_lateness))
-    print("\nAll experiments finished.")
-    print("Max lateness per experiment:", results)
+
+    Average_max_lateness = sum(lateness_values) / len(lateness_values)
+
+    print("\n=== All 52 Weekly Experiments Finished ===")
+    print("Max lateness per week:", lateness_values)
+    print(f"Average max lateness: {Average_max_lateness}")
+    print(f"Maximum of max lateness: {Max_Max_lateness}")
