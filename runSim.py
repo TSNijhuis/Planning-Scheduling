@@ -48,6 +48,7 @@ def simulate_over_time(total_hours=168, disruption_rates=(0.05, 0.05, 0.05)):
         for machine, state in machine_states.items():
             # If a job is running, decrement its remaining time
             job = state['current_job']
+            # 1. If a job is running, decrement its remaining time
             if job:
                 job.remaining_time -= 1
                 if job.remaining_time <= 0:
@@ -56,10 +57,20 @@ def simulate_over_time(total_hours=168, disruption_rates=(0.05, 0.05, 0.05)):
                     print(f"Job {job.id} finished on {machine} at time {t}")
                     state['current_job'] = None
                     state['remaining_time'] = 0
+                    # Prepare for changeover before next job
+                    # Only set changeover if there is another job to do
+                    if state['job_idx'] < len(state['queue']):
+                        next_job = state['queue'][state['job_idx']]
+                        state['changeover_remaining'] = next_job.changeover_time
+                    else:
+                        state['changeover_remaining'] = 0
 
-            # If idle, start next job in queue
+            # 2. If idle, handle changeover or start next job
             if not state['current_job']:
-                while state['job_idx'] < len(state['queue']):
+                # Handle changeover period
+                if state.get('changeover_remaining', 0) > 0:
+                    state['changeover_remaining'] -= 1
+                elif state['job_idx'] < len(state['queue']):
                     next_job = state['queue'][state['job_idx']]
                     if next_job.status == 'not_started':
                         next_job.status = 'in_progress'
@@ -68,8 +79,6 @@ def simulate_over_time(total_hours=168, disruption_rates=(0.05, 0.05, 0.05)):
                         state['remaining_time'] = next_job.remaining_time
                         print(f"Job {next_job.id} started on {machine} at time {t}")
                         state['job_idx'] += 1
-                        break
-                    state['job_idx'] += 1
 
         # 2. Decide which disruption (if any) occurs
         disruption_type = random.choices(disruption_choices, weights=disruption_probs, k=1)[0]
@@ -122,22 +131,23 @@ def simulate_over_time(total_hours=168, disruption_rates=(0.05, 0.05, 0.05)):
                 if actual_jobs:
                     last_actual_job_id, _, last_actual_end = actual_jobs[-1]
                     last_job_obj = next((j for j in jobs if j.id == last_actual_job_id), None)
-                    last_changeover = last_job_obj.changeover_time if last_job_obj else 0
-                    last_end = last_actual_end + last_changeover
+                    last_end = last_actual_end + (last_job_obj.changeover_time if last_job_obj else 0)
                 else:
                     last_end = 0
-                # 2. Planned jobs for not_started (from final_schedule)
+
                 planned_jobs = []
                 for tup in final_schedule.get(machine, []):
                     job_id, start, end = tup
                     if job_id in job_ids_set and not any(j[0] == job_id for j in actual_jobs):
-                        # Find the job object to get its changeover_time
                         job_obj = next((j for j in jobs if j.id == job_id), None)
                         changeover = job_obj.changeover_time if job_obj else 0
-                        planned_start = max(start, last_end + changeover)
+                        # Always add changeover after the previous job (actual or planned), except before the very first job
+                        if actual_jobs or planned_jobs:
+                            last_end += changeover
+                        planned_start = max(start, last_end)
                         planned_end = planned_start + (end - start)
                         planned_jobs.append((job_id, planned_start, planned_end))
-                        last_end = planned_end + changeover
+                        last_end = planned_end
                 combined_schedule[machine] = actual_jobs + planned_jobs
 
             max_late = calculate_max_lateness(combined_schedule, jobs)
@@ -154,5 +164,12 @@ def simulate_over_time(total_hours=168, disruption_rates=(0.05, 0.05, 0.05)):
         print(f"{job.id}: {job.status}, start={job.start_time}, end={job.end_time}")
 
 if __name__ == "__main__":
-    random.seed(42)
-    simulate_over_time(total_hours=168, disruption_rates=(0.05, 0.05, 0.05))
+    results = []
+    for exp in range(100):
+        print(f"\n=== Experiment {exp+1} ===")
+        random.seed(42 + exp) 
+        # Optionally, collect metrics like max lateness
+        max_lateness = simulate_over_time(total_hours=168, disruption_rates=(0.017, 0.0089, 0.0013))
+        results.append(max_lateness)
+    print("\nAll experiments finished.")
+    print("Max lateness per experiment:", results)
