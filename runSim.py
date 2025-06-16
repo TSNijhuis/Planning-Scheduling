@@ -21,6 +21,7 @@ def simulate_over_time(self,total_hours=168, disruption_rates=(0.05, 0.05, 0.05)
     disruption_probs = [demand_rate, cancel_rate, breakdown_rate, no_disruption_rate]
     # Initial assignment
     jobs = generate_jobs()
+    jobs = generate_jobs()
     machine_assignments = assign_jobs_to_individual_machines(jobs)
     # For each machine, keep a queue of jobs (in order) and track current job
     machine_states = {}
@@ -113,9 +114,13 @@ def simulate_over_time(self,total_hours=168, disruption_rates=(0.05, 0.05, 0.05)
                 machine_states[machine]['queue'] = in_progress_or_done 
                 if machine in new_assignments:
                     machine_states[machine]['queue'].extend(new_assignments[machine])
+                machine_states[machine]['queue'] = in_progress_or_done 
+                if machine in new_assignments:
+                    machine_states[machine]['queue'].extend(new_assignments[machine])
                 state = machine_states[machine]
                 state['job_idx'] = len(in_progress_or_done)
 
+            # Build a combined schedule for plotting
             # Build a combined schedule for plotting
             combined_schedule = {}
             job_ids_set = {job.id for job in jobs}

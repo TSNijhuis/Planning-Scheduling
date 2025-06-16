@@ -28,8 +28,7 @@ MACHINE_GROUPS = {
 def generate_jobs():
     total_jobs = 40
     mean_order_size = 400
-    
-    std_order_size = 40 #Can be adjusted accordingly by Kvadrat
+    std_order_size = 40   #Can be adjusted accordingly by Kvadrat
     min_order_size = 200
 
     machine_types = ['140 cm', '300 cm', 'Jacquard']
@@ -355,47 +354,6 @@ def run_full_scheduling_pipeline(jobs, vns_iterations=50):
     # Return all three for flexibility, but use optimized_schedule as the final
     return initial_schedule, sbh_schedule, optimized_schedule
 
-# Run all
-if __name__ == "__main__":
-    random.seed(42)
-    jobs = generate_jobs()
 
-    # 1. Initial EDD schedule
-    machine_assignments = assign_jobs_to_individual_machines(jobs)
-    initial_edd_schedule = {}
-    for machine, job_list in machine_assignments.items():
-        initial_edd_schedule[machine] = schedule_machine(job_list)
-    max_late = calculate_max_lateness(initial_edd_schedule, jobs)
-    plot_gantt_chart(initial_edd_schedule, title="Initial EDD Schedule", save_path="initial_edd_schedule.png", max_lateness=max_late)
 
-    # 2. After SBH
-    sbh_schedule = shifting_bottleneck_parallel(jobs)
-    max_late_sbh = calculate_max_lateness(sbh_schedule, jobs)
-    plot_gantt_chart(sbh_schedule, title="After Shifting Bottleneck Heuristic (SBH)", save_path="after_sbh.png", max_lateness=max_late_sbh)
 
-    # 3. After VNS
-    vns_schedule = vns_optimization(jobs, iterations=50)
-    max_late_vns = calculate_max_lateness(vns_schedule, jobs)
-    plot_gantt_chart(vns_schedule, title="After VNS Optimization", save_path="after_vns.png", max_lateness=max_late_vns)
-
-    # 4. Apply disruptions (adds new job to jobs list)
-    print("\n--- Applying Disruptions ---")
-    apply_additional_disruptions(jobs, demand_rate=0.05)
-
-    # 5. Initial EDD schedule after disruption
-    machine_assignments_disrupted = assign_jobs_to_individual_machines(jobs)
-    initial_edd_schedule_disrupted = {}
-    for machine, job_list in machine_assignments_disrupted.items():
-        initial_edd_schedule_disrupted[machine] = schedule_machine(job_list)
-    max_late_disrupted = calculate_max_lateness(initial_edd_schedule_disrupted, jobs)
-    plot_gantt_chart(initial_edd_schedule_disrupted, title="Initial EDD Schedule After Disruption", save_path="initial_edd_schedule_after_disruption.png", max_lateness=max_late_disrupted)
-
-    # 6. After SBH (post-disruption)
-    sbh_schedule_disrupted = shifting_bottleneck_parallel(jobs)
-    max_late_sbh_disrupted = calculate_max_lateness(sbh_schedule_disrupted, jobs)
-    plot_gantt_chart(sbh_schedule_disrupted, title="After SBH (Post-Disruption)", save_path="after_sbh_post_disruption.png", max_lateness=max_late_sbh_disrupted)
-
-    # 7. After VNS (post-disruption)
-    vns_schedule_disrupted = vns_optimization(jobs, iterations=50)
-    max_late_vns_disrupted = calculate_max_lateness(vns_schedule_disrupted, jobs)
-    plot_gantt_chart(vns_schedule_disrupted, title="After VNS (Post-Disruption)", save_path="after_vns_post_disruption.png", max_lateness=max_late_vns_disrupted)
