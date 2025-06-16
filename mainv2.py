@@ -25,12 +25,11 @@ MACHINE_GROUPS = {
 }
 
 # Generate jobs based on machine capacity distribution
-def generate_jobs(stdev):
-    
-
+def generate_jobs():
     total_jobs = 40
     mean_order_size = 400
-    std_order_size = stdev  #Can be adjusted accordingly by Kvadrat
+    
+    std_order_size = 40 #Can be adjusted accordingly by Kvadrat
     min_order_size = 200
 
     machine_types = ['140 cm', '300 cm', 'Jacquard']
@@ -142,7 +141,7 @@ def shifting_bottleneck_parallel(jobs):
                 for target_machine in group_machines:
                     for insert_pos in range(len(machine_assignments[target_machine]) + 1):
                         if target_machine == machine and insert_pos > machine_assignments[machine].index(job):
-                            continue  # Don't re-insert at the same or later position in the same machine
+                            continue # Don't re-insert at the same or later position in the same machine
 
                         # Remove from current machine
                         machine_assignments[machine].remove(job)
@@ -182,12 +181,7 @@ def shifting_bottleneck_parallel(jobs):
     return final_schedule, machine_assignments
 
 # Apply additional disruptions
-def apply_additional_disruptions(jobs, demand_rate=1, cancel_rate=1, breakdown_rate=1,
-                                  machine_assignments=None, reschedulable_jobs=None, seed=None):
-    if seed is not None:
-        random.seed(seed)
-        np.random.seed(seed)
-
+def apply_additional_disruptions(jobs, demand_rate=1, cancel_rate=1, breakdown_rate=1, machine_assignments=None, reschedulable_jobs=None):
     if reschedulable_jobs is None:
         reschedulable_jobs = []
     # --- Unexpected Demand ---
@@ -238,7 +232,6 @@ def apply_additional_disruptions(jobs, demand_rate=1, cancel_rate=1, breakdown_r
     return jobs, reschedulable_jobs
 
 def vns_optimization(jobs, iterations=100):
-    
     best_jobs = copy.deepcopy(jobs)
     best_schedule, best_assignments = shifting_bottleneck_parallel(best_jobs)
     best_makespan = calculate_total_makespan(best_schedule)
@@ -257,13 +250,9 @@ def vns_optimization(jobs, iterations=100):
     return best_schedule, best_assignments
 
 def calculate_total_makespan(schedule):
-    return max(end for jobs in schedule.values() for _, _, end in jobs)
+    return max((end for jobs in schedule.values() for _, _, end in jobs), default=0)
 
-def perturb_jobs(jobs, seed=None):
-    if seed is not None:
-        random.seed(seed)
-        np.random.seed(seed)
-
+def perturb_jobs(jobs):
     new_jobs = jobs[:]
     machine_types = list(set(job.machine_type for job in new_jobs))
     target_machine = random.choice(machine_types)
@@ -277,9 +266,9 @@ def perturb_jobs(jobs, seed=None):
 
 def print_machine_group_info():
     print("===== Machine Group Information =====")
-    print("Group      #Machines  WeeklyCap  Utilization  ProdSpeed(m/h)")
+    print("Group #Machines WeeklyCap Utilization ProdSpeed(m/h)")
     for group, info in MACHINE_GROUPS.items():
-        print(f"{group:10} {info['num_machines']:>9}  {info['weekly_capacity']:>9}  {info['utilization']*100:>9.1f}%  {info['production_speed']:>12.3f}")
+        print(f"{group:10} {info['num_machines']:>9} {info['weekly_capacity']:>9} {info['utilization']*100:>9.1f}% {info['production_speed']:>12.3f}")
     print()
 
 def print_schedule(schedule, title):
@@ -287,7 +276,7 @@ def print_schedule(schedule, title):
     for machine, sched in sorted(schedule.items()):
         print(f"\nMachine: {machine}")
         for job_id, start, end in sched:
-            print(f"  {job_id}: Start at {start}h, End at {end}h")
+            print(f" {job_id}: Start at {start}h, End at {end}h")
 
 # Gantt chart visualization
 import matplotlib.pyplot as plt
@@ -347,11 +336,7 @@ def calculate_max_lateness(schedule, jobs):
                 max_lateness = lateness
     return max_lateness
 
-def run_full_scheduling_pipeline(jobs, vns_iterations=50, seed=None):
-    if seed is not None:
-        random.seed(seed)
-        np.random.seed(seed)
-
+def run_full_scheduling_pipeline(jobs, vns_iterations=50):
     # 1. Assign jobs to machines and schedule using EDD
     machine_assignments = assign_jobs_to_individual_machines(jobs)
     initial_schedule = {}
@@ -360,16 +345,57 @@ def run_full_scheduling_pipeline(jobs, vns_iterations=50, seed=None):
     print_schedule(initial_schedule, "Initial EDD Schedule (per machine)")
 
     # 2. Shifting Bottleneck Heuristic (SBH)
-    sbh_schedule, _ = shifting_bottleneck_parallel(jobs)
-
+    sbh_schedule = shifting_bottleneck_parallel(jobs)
     print_schedule(sbh_schedule, "Shifting Bottleneck Heuristic Schedule")
 
     # 3. VNS Optimization (run on SBH result)
-    optimized_schedule, _ = vns_optimization(jobs, iterations=vns_iterations, seed=seed)
+    optimized_schedule = vns_optimization(jobs, iterations=vns_iterations)
     print_schedule(optimized_schedule, "Optimized Schedule (VNS)")
 
+    # Return all three for flexibility, but use optimized_schedule as the final
     return initial_schedule, sbh_schedule, optimized_schedule
 
+# Run all
+if __name__ == "__main__":
+    random.seed(42)
+    jobs = generate_jobs()
 
+    # 1. Initial EDD schedule
+    machine_assignments = assign_jobs_to_individual_machines(jobs)
+    initial_edd_schedule = {}
+    for machine, job_list in machine_assignments.items():
+        initial_edd_schedule[machine] = schedule_machine(job_list)
+    max_late = calculate_max_lateness(initial_edd_schedule, jobs)
+    plot_gantt_chart(initial_edd_schedule, title="Initial EDD Schedule", save_path="initial_edd_schedule.png", max_lateness=max_late)
 
+    # 2. After SBH
+    sbh_schedule = shifting_bottleneck_parallel(jobs)
+    max_late_sbh = calculate_max_lateness(sbh_schedule, jobs)
+    plot_gantt_chart(sbh_schedule, title="After Shifting Bottleneck Heuristic (SBH)", save_path="after_sbh.png", max_lateness=max_late_sbh)
 
+    # 3. After VNS
+    vns_schedule = vns_optimization(jobs, iterations=50)
+    max_late_vns = calculate_max_lateness(vns_schedule, jobs)
+    plot_gantt_chart(vns_schedule, title="After VNS Optimization", save_path="after_vns.png", max_lateness=max_late_vns)
+
+    # 4. Apply disruptions (adds new job to jobs list)
+    print("\n--- Applying Disruptions ---")
+    apply_additional_disruptions(jobs, demand_rate=0.05)
+
+    # 5. Initial EDD schedule after disruption
+    machine_assignments_disrupted = assign_jobs_to_individual_machines(jobs)
+    initial_edd_schedule_disrupted = {}
+    for machine, job_list in machine_assignments_disrupted.items():
+        initial_edd_schedule_disrupted[machine] = schedule_machine(job_list)
+    max_late_disrupted = calculate_max_lateness(initial_edd_schedule_disrupted, jobs)
+    plot_gantt_chart(initial_edd_schedule_disrupted, title="Initial EDD Schedule After Disruption", save_path="initial_edd_schedule_after_disruption.png", max_lateness=max_late_disrupted)
+
+    # 6. After SBH (post-disruption)
+    sbh_schedule_disrupted = shifting_bottleneck_parallel(jobs)
+    max_late_sbh_disrupted = calculate_max_lateness(sbh_schedule_disrupted, jobs)
+    plot_gantt_chart(sbh_schedule_disrupted, title="After SBH (Post-Disruption)", save_path="after_sbh_post_disruption.png", max_lateness=max_late_sbh_disrupted)
+
+    # 7. After VNS (post-disruption)
+    vns_schedule_disrupted = vns_optimization(jobs, iterations=50)
+    max_late_vns_disrupted = calculate_max_lateness(vns_schedule_disrupted, jobs)
+    plot_gantt_chart(vns_schedule_disrupted, title="After VNS (Post-Disruption)", save_path="after_vns_post_disruption.png", max_lateness=max_late_vns_disrupted)
