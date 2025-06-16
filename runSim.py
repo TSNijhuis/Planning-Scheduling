@@ -1,6 +1,6 @@
 import random
 import copy
-from mainv2 import generate_jobs, assign_jobs_to_individual_machines, apply_additional_disruptions, schedule_machine, shifting_bottleneck_parallel, vns_optimization, MACHINE_GROUPS
+from mainv2 import calculate_max_lateness, generate_jobs, assign_jobs_to_individual_machines, apply_additional_disruptions, schedule_machine, shifting_bottleneck_parallel, vns_optimization, plot_gantt_chart, MACHINE_GROUPS
 
 def extract_jobs(job_list):
     """Ensure a flat list of Job objects, even if input is a list of tuples or strings."""
@@ -90,22 +90,7 @@ def simulate_over_time(jobs, total_hours=168, disruption_rates=(0.05, 0.05, 0.05
             unfinished_jobs = [j for j in jobs if j.status == 'not_started']
 
             # --- Use shifting bottleneck heuristic and VNS for rescheduling ---
-            new_assignments = shifting_bottleneck_parallel(unfinished_jobs)
-            jobs_for_vns = [job for job_list in new_assignments.values() for job in job_list]
-            print("jobs_for_vns types:", [type(j) for j in jobs_for_vns[:5]])
-
-            # Always extract Job objects robustly
-            jobs_for_vns = extract_jobs(jobs_for_vns)
-
-            vns_result = vns_optimization(jobs_for_vns, iterations=100)
-            print("vns_result types:", [type(j) for j in vns_result[:5]])
-
-            # If vns_result is a list of tuples, extract jobs:
-            if vns_result and isinstance(vns_result[0], tuple):
-                jobs_after_vns = extract_jobs(vns_result)
-                new_assignments = assign_jobs_to_individual_machines(jobs_after_vns)
-            else:
-                new_assignments = vns_result  
+            new_assignments = vns_optimization(unfinished_jobs, iterations=100)  
 
             # Update machine queues for not_started jobs only
             for machine in machine_states:
@@ -113,6 +98,23 @@ def simulate_over_time(jobs, total_hours=168, disruption_rates=(0.05, 0.05, 0.05
                 machine_states[machine]['queue'] = in_progress + new_assignments.get(machine, [])
                 state = machine_states[machine]
                 state['job_idx'] = len(in_progress)
+            
+            # Build the schedule for plotting
+            final_schedule = {}
+            for machine, state in machine_states.items():
+                jobs_to_plot = [j for j in state['queue'] if j.start_time is not None and j.end_time is not None]
+                final_schedule[machine] = [(j.id, j.start_time, j.end_time) for j in jobs_to_plot]
+
+            # Calculate max lateness for the current jobs
+            max_late = calculate_max_lateness(final_schedule, jobs)
+
+            # Call plot_gantt_chart with all arguments
+            plot_gantt_chart(
+                final_schedule,
+                title=f"Gantt Chart after disruption at t={t}",
+                save_path=f"gantt_after_disruption_t{t}.png",
+                max_lateness=max_late
+            )
             
     # Print summary
     print("\n=== Simulation finished ===")

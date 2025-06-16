@@ -26,7 +26,7 @@ MACHINE_GROUPS = {
 
 # Generate jobs based on machine capacity distribution
 def generate_jobs():
-    total_jobs = 80
+    total_jobs = 40
     mean_order_size = 400
     std_order_size = 40   #Can be adjusted accordingly by Kvadrat
     min_order_size = 200
