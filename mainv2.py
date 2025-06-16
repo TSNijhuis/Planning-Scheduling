@@ -107,7 +107,7 @@ def schedule_machine(machine_jobs):
 # Shifting Bottleneck Heuristic with parallel machines
 def shifting_bottleneck_parallel(jobs):
     if not jobs:
-        return {}
+        return {}, {}
     machine_assignments = assign_jobs_to_individual_machines(jobs)
     all_machines = list(machine_assignments.keys())
     improved = True
@@ -177,10 +177,12 @@ def shifting_bottleneck_parallel(jobs):
     final_schedule = {}
     for machine in all_machines:
         final_schedule[machine] = schedule_machine(machine_assignments[machine])
-    return final_schedule
+    return final_schedule, machine_assignments
 
 # Apply additional disruptions
-def apply_additional_disruptions(jobs, demand_rate=1, cancel_rate=1, breakdown_rate=1, machine_assignments=None):
+def apply_additional_disruptions(jobs, demand_rate=1, cancel_rate=1, breakdown_rate=1, machine_assignments=None, reschedulable_jobs=None):
+    if reschedulable_jobs is None:
+        reschedulable_jobs = []
     # --- Unexpected Demand ---
     if random.random() < demand_rate:
         machine_types = ['140 cm', '300 cm', 'Jacquard']
@@ -208,49 +210,43 @@ def apply_additional_disruptions(jobs, demand_rate=1, cancel_rate=1, breakdown_r
     if machine_assignments and random.random() < breakdown_rate:
         machine_types = ['140 cm', '300 cm', 'Jacquard']
         breakdown_type = random.choice(machine_types)
-        # Find all machines of this type
         machines_of_type = [m for m in machine_assignments if m.startswith(breakdown_type)]
         if machines_of_type:
             broken_machine = random.choice(machines_of_type)
-            # Access the job queue correctly
             queue = machine_assignments[broken_machine]['queue'] if isinstance(machine_assignments[broken_machine], dict) else machine_assignments[broken_machine]
             broken_jobs = [job for job in queue if job.status != 'finished']
-            print(f"Machine breakdown: {broken_machine} is down. Rescheduling {len(broken_jobs)} jobs.")
+            print(f"Machine breakdown: {broken_machine} is down. Marking {len(broken_jobs)} jobs for rescheduling.")
             # Remove jobs from the broken machine's queue
             machine_assignments[broken_machine]['queue'] = [job for job in queue if job.status == 'finished']
-            # Reschedule broken jobs to other machines of the same type
-            other_machines = [m for m in machines_of_type if m != broken_machine]
+            # Set status to 'not_started' and clear start/end times for jobs to be rescheduled
             for job in broken_jobs:
-                if other_machines:
-                    # Assign to the machine with the fewest jobs in its queue
-                    target = min(other_machines, key=lambda m: len(machine_assignments[m]['queue']))
-                    machine_assignments[target]['queue'].append(job)
-                    print(f"Rescheduled job {job.id} to {target}")
-            # Optionally, remove the broken machine from assignments
-            # del machine_assignments[broken_machine]
+                job.status = 'not_started'
+                job.start_time = None
+                job.end_time = None
+            # Remove the broken machine from the assignments so it won't be used again
+            del machine_assignments[broken_machine]
     elif random.random() < breakdown_rate:
-        # Fallback: if no machine_assignments provided, do nothing or print warning
         print("Warning: Machine breakdown requested but no machine_assignments provided.")
 
-    return jobs
+    return jobs, reschedulable_jobs
 
-# VNS Optimization
 def vns_optimization(jobs, iterations=100):
     best_jobs = copy.deepcopy(jobs)
-    best_schedule = shifting_bottleneck_parallel(best_jobs)
+    best_schedule, best_assignments = shifting_bottleneck_parallel(best_jobs)
     best_makespan = calculate_total_makespan(best_schedule)
 
     for _ in range(iterations):
         new_jobs = perturb_jobs(copy.deepcopy(best_jobs))
-        new_schedule = shifting_bottleneck_parallel(new_jobs)
+        new_schedule, new_assignments = shifting_bottleneck_parallel(new_jobs)
         new_makespan = calculate_total_makespan(new_schedule)
 
         if new_makespan < best_makespan:
             best_jobs = new_jobs
             best_schedule = new_schedule
+            best_assignments = new_assignments
             best_makespan = new_makespan
 
-    return best_schedule
+    return best_schedule, best_assignments
 
 def calculate_total_makespan(schedule):
     return max(end for jobs in schedule.values() for _, _, end in jobs)
