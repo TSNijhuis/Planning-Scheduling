@@ -25,14 +25,12 @@ MACHINE_GROUPS = {
 }
 
 # Generate jobs based on machine capacity distribution
-def generate_jobs(seed=None):
-    if seed is not None:
-        random.seed(seed)
-        np.random.seed(seed)
+def generate_jobs(stdev):
+    
 
     total_jobs = 40
     mean_order_size = 400
-    std_order_size = 40   #Can be adjusted accordingly by Kvadrat
+    std_order_size = stdev  #Can be adjusted accordingly by Kvadrat
     min_order_size = 200
 
     machine_types = ['140 cm', '300 cm', 'Jacquard']
@@ -240,6 +238,7 @@ def apply_additional_disruptions(jobs, demand_rate=1, cancel_rate=1, breakdown_r
     return jobs, reschedulable_jobs
 
 def vns_optimization(jobs, iterations=100):
+    
     best_jobs = copy.deepcopy(jobs)
     best_schedule, best_assignments = shifting_bottleneck_parallel(best_jobs)
     best_makespan = calculate_total_makespan(best_schedule)
