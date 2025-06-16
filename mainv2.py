@@ -12,6 +12,10 @@ class Job:
         self.processing_time = processing_time
         self.changeover_time = changeover_time
         self.due_date = due_date
+        self.status = 'not_started'
+        self.remaining_time = processing_time
+        self.start_time = None
+        self.end_time = None
 
 # Machine group data
 MACHINE_GROUPS = {
@@ -79,7 +83,7 @@ def assign_jobs_to_individual_machines(jobs):
         if best_machine:
             machine_assignments[best_machine].append(job)
         else:
-            print(f"⚠️ Warning: Could not assign job {job.id} to any {group} machine without exceeding weekly capacity.")
+            print(f"Warning: Could not assign job {job.id} to any {group} machine without exceeding weekly capacity.")
 
     return machine_assignments
 
@@ -188,13 +192,13 @@ def apply_additional_disruptions(jobs, demand_rate=1, cancel_rate=1, breakdown_r
         due_date = int(proc_time + random.gauss(6, 2))
         new_job_id = f"NEW{random.randint(100,999)}"
         jobs.append(Job(new_job_id, machine_type, proc_time, changeover_time, due_date))
-        print(f"⚠️ Unexpected demand: Added job {new_job_id} ({machine_type}, {order_size}m, {proc_time}h) to jobs list")
+        print(f"Unexpected demand: Added job {new_job_id} ({machine_type}, {order_size}m, {proc_time}h) to jobs list")
 
     # --- Job Cancellation ---
     if jobs and random.random() < cancel_rate:
         cancel_job = random.choice(jobs)
         jobs.remove(cancel_job)
-        print(f"⚠️ Job cancellation: Removed job {cancel_job.id} ({cancel_job.machine_type}) from jobs list")
+        print(f"Job cancellation: Removed job {cancel_job.id} ({cancel_job.machine_type}) from jobs list")
 
     # --- Machine Breakdown ---
     if random.random() < breakdown_rate:
@@ -206,7 +210,7 @@ def apply_additional_disruptions(jobs, demand_rate=1, cancel_rate=1, breakdown_r
         for job in affected_jobs:
             old_time = job.processing_time
             job.processing_time = int(job.processing_time * breakdown_factor)
-            print(f"⚠️ Machine breakdown: Increased proc_time for job {job.id} ({breakdown_type}) from {old_time}h to {job.processing_time}h")
+            print(f"Machine breakdown: Increased proc_time for job {job.id} ({breakdown_type}) from {old_time}h to {job.processing_time}h")
 
     return jobs
 
