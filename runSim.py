@@ -44,6 +44,15 @@ def simulate_over_time(self,total_hours=168, disruption_rates=(0.05, 0.05, 0.05)
     for machine, job_list in machine_assignments.items():
         initial_schedule[machine] = schedule_machine(job_list)
 
+    # Plot the initial schedule
+    max_late = calculate_max_lateness(initial_schedule, jobs)
+    plot_gantt_chart(
+        initial_schedule,
+        title="Initial Gantt Chart before simulation",
+        save_path="gantt_initial.png",
+        max_lateness=max_late
+    )
+
     for t in range(total_hours):
         # 1. Update job progress on each machine
         for machine, state in machine_states.items():
@@ -90,10 +99,8 @@ def simulate_over_time(self,total_hours=168, disruption_rates=(0.05, 0.05, 0.05)
             jobs, _ = apply_additional_disruptions(jobs, demand_rate=0, cancel_rate=1, breakdown_rate=0, machine_assignments=machine_states, reschedulable_jobs=[])
             disruption_occurred = True
         elif disruption_type == 'breakdown':
-            jobs, _ = apply_additional_disruptions(
-                jobs, demand_rate=0, cancel_rate=0, breakdown_rate=1,
-                machine_assignments=machine_states, reschedulable_jobs=[]
-            )
+            jobs, _ = apply_additional_disruptions(jobs, demand_rate=0, cancel_rate=0, breakdown_rate=1, machine_assignments=machine_states, reschedulable_jobs=[])
+            disruption_occurred = True
 
         # 3. If disruption occurred, reschedule not_started jobs
         if disruption_occurred:
@@ -106,6 +113,48 @@ def simulate_over_time(self,total_hours=168, disruption_rates=(0.05, 0.05, 0.05)
                 machine_states[machine]['queue'] = in_progress_or_done + new_assignments.get(machine, [])
                 state = machine_states[machine]
                 state['job_idx'] = len(in_progress_or_done)
+
+                        # Build a combined schedule for plotting
+            combined_schedule = {}
+            job_ids_set = {job.id for job in jobs}
+            for machine in machine_states:
+                # 1. Jobs already started or finished (with actual times)
+                actual_jobs = [
+                    (j.id, j.start_time, j.end_time if j.status == 'finished' else (j.start_time + j.processing_time))
+                    for j in machine_states[machine]['queue']
+                    if j.status != 'not_started' and j.start_time is not None and j.id in job_ids_set
+                ]
+                # Find the latest end time on this machine
+                # Find the last actual job (finished or in progress) and its changeover time
+                if actual_jobs:
+                    last_actual_job_id, _, last_actual_end = actual_jobs[-1]
+                    last_job_obj = next((j for j in jobs if j.id == last_actual_job_id), None)
+                    last_end = last_actual_end + (last_job_obj.changeover_time if last_job_obj else 0)
+                else:
+                    last_end = 0
+
+                planned_jobs = []
+                for tup in final_schedule.get(machine, []):
+                    job_id, start, end = tup
+                    if job_id in job_ids_set and not any(j[0] == job_id for j in actual_jobs):
+                        job_obj = next((j for j in jobs if j.id == job_id), None)
+                        changeover = job_obj.changeover_time if job_obj else 0
+                        # Always add changeover after the previous job (actual or planned), except before the very first job
+                        if actual_jobs or planned_jobs:
+                            last_end += changeover
+                        planned_start = max(start, last_end)
+                        planned_end = planned_start + (end - start)
+                        planned_jobs.append((job_id, planned_start, planned_end))
+                        last_end = planned_end
+                combined_schedule[machine] = actual_jobs + planned_jobs
+
+            max_late = calculate_max_lateness(combined_schedule, jobs)
+            plot_gantt_chart(
+                combined_schedule,
+                title=f"Gantt Chart after disruption at t={t}",
+                save_path=f"gantt_after_disruption_t{t}.png",
+                max_lateness=max_late
+            )
 
     # Calculate max lateness for this experiment
     combined_schedule = {}
