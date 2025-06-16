@@ -165,11 +165,16 @@ def simulate_over_time(total_hours=168, disruption_rates=(0.05, 0.05, 0.05)):
 
 if __name__ == "__main__":
     results = []
-    for exp in range(100):
+    Total_max_lateness = 0
+    Average_max_lateness = 0
+    for exp in range(52):  # Run 52 experiments (one year)
         print(f"\n=== Experiment {exp+1} ===")
         random.seed(42 + exp) 
         # Optionally, collect metrics like max lateness
         max_lateness = simulate_over_time(total_hours=168, disruption_rates=(0.017, 0.0089, 0.0013))
-        results.append(max_lateness)
+        Total_max_lateness += max_lateness
+        Average_max_lateness = Total_max_lateness / (52)
+        Max_Max_lateness = max(Max_Max_lateness, max_lateness)
+        results.append((Max_Max_lateness, Average_max_lateness))
     print("\nAll experiments finished.")
     print("Max lateness per experiment:", results)
