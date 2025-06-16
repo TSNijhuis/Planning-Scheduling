@@ -46,13 +46,13 @@ def simulate_over_time(self,total_hours=168, disruption_rates=(0.05, 0.05, 0.05)
         initial_schedule[machine] = schedule_machine(job_list)
 
     # Plot the initial schedule
-    max_late = calculate_max_lateness(initial_schedule, jobs)
+    """max_late = calculate_max_lateness(initial_schedule, jobs)
     plot_gantt_chart(
         initial_schedule,
         title="Initial Gantt Chart before simulation",
         save_path="gantt_initial.png",
         max_lateness=max_late
-    )
+    )"""
 
     for t in range(total_hours):
         # 1. Update job progress on each machine
@@ -155,13 +155,13 @@ def simulate_over_time(self,total_hours=168, disruption_rates=(0.05, 0.05, 0.05)
                         last_end = planned_end
                 combined_schedule[machine] = actual_jobs + planned_jobs
 
-            max_late = calculate_max_lateness(combined_schedule, jobs)
+            """max_late = calculate_max_lateness(combined_schedule, jobs)
             plot_gantt_chart(
                 combined_schedule,
                 title=f"Gantt Chart after disruption at t={t}",
                 save_path=f"gantt_after_disruption_t{t}.png",
                 max_lateness=max_late
-            )
+            )"""
             return calculate_max_lateness(combined_schedule, jobs)
 
 class SimulationGUI:
