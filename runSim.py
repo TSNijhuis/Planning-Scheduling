@@ -8,6 +8,7 @@ from tkinter import messagebox, ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
 import numpy as np
+from PIL import Image, ImageTk
 
 def simulate_over_time(self,total_hours=168, disruption_rates=(0.05, 0.05, 0.05)):
     # disruption_rates: (demand, cancel, breakdown)

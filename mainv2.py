@@ -19,7 +19,7 @@ class Job:
 
 # Machine group data
 MACHINE_GROUPS = {
-    '300 cm': {'num_machines': 12, 'weekly_capacity': 500, 'utilization': 0.95, 'production_speed': 2.976},
+    '300 cm': {'num_machines': 13, 'weekly_capacity': 500, 'utilization': 0.95, 'production_speed': 2.976},
     '140 cm': {'num_machines': 16, 'weekly_capacity': 900, 'utilization': 0.62, 'production_speed': 5.357},
     'Jacquard': {'num_machines': 3, 'weekly_capacity': 750, 'utilization': 0.53, 'production_speed': 4.464}
 }
