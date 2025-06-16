@@ -260,7 +260,11 @@ def vns_optimization(jobs, iterations=100):
 def calculate_total_makespan(schedule):
     return max(end for jobs in schedule.values() for _, _, end in jobs)
 
-def perturb_jobs(jobs):
+def perturb_jobs(jobs, seed=None):
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
+
     new_jobs = jobs[:]
     machine_types = list(set(job.machine_type for job in new_jobs))
     target_machine = random.choice(machine_types)
@@ -344,7 +348,11 @@ def calculate_max_lateness(schedule, jobs):
                 max_lateness = lateness
     return max_lateness
 
-def run_full_scheduling_pipeline(jobs, vns_iterations=50):
+def run_full_scheduling_pipeline(jobs, vns_iterations=50, seed=None):
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
+
     # 1. Assign jobs to machines and schedule using EDD
     machine_assignments = assign_jobs_to_individual_machines(jobs)
     initial_schedule = {}
@@ -353,16 +361,15 @@ def run_full_scheduling_pipeline(jobs, vns_iterations=50):
     print_schedule(initial_schedule, "Initial EDD Schedule (per machine)")
 
     # 2. Shifting Bottleneck Heuristic (SBH)
-    sbh_schedule = shifting_bottleneck_parallel(jobs)
+    sbh_schedule, _ = shifting_bottleneck_parallel(jobs)
+
     print_schedule(sbh_schedule, "Shifting Bottleneck Heuristic Schedule")
 
     # 3. VNS Optimization (run on SBH result)
-    optimized_schedule = vns_optimization(jobs, iterations=vns_iterations)
+    optimized_schedule, _ = vns_optimization(jobs, iterations=vns_iterations, seed=seed)
     print_schedule(optimized_schedule, "Optimized Schedule (VNS)")
 
-    # Return all three for flexibility, but use optimized_schedule as the final
     return initial_schedule, sbh_schedule, optimized_schedule
-
 
 
 

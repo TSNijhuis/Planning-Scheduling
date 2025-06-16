@@ -172,7 +172,7 @@ if __name__ == "__main__":
 
     for week in range(1, 53):  # 52 unique seeds, one for each week
         print(f"\n=== Experiment (Week) {week} ===")
-        random.seed(week)  # Set unique, reproducible seed for each run
+        random.seed(42 + week)  # Set unique, reproducible seed for each run
         max_lateness = simulate_over_time(
             total_hours=168,
             disruption_rates=(0.017, 0.0089, 0.0013)
