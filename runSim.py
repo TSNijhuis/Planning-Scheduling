@@ -20,7 +20,7 @@ def simulate_over_time(self,total_hours=168, disruption_rates=(0.05, 0.05, 0.05)
     disruption_choices = ['demand', 'cancel', 'breakdown', 'none']
     disruption_probs = [demand_rate, cancel_rate, breakdown_rate, no_disruption_rate]
     # Initial assignment
-    jobs = generate_jobs(stdev)
+    jobs = generate_jobs()
     machine_assignments = assign_jobs_to_individual_machines(jobs)
     # For each machine, keep a queue of jobs (in order) and track current job
     machine_states = {}
@@ -110,11 +110,13 @@ def simulate_over_time(self,total_hours=168, disruption_rates=(0.05, 0.05, 0.05)
             # Update machine queues for not_started jobs only
             for machine in machine_states:
                 in_progress_or_done = [j for j in machine_states[machine]['queue'] if j.status != 'not_started']
-                machine_states[machine]['queue'] = in_progress_or_done + new_assignments.get(machine, [])
+                machine_states[machine]['queue'] = in_progress_or_done 
+                if machine in new_assignments:
+                    machine_states[machine]['queue'].extend(new_assignments[machine])
                 state = machine_states[machine]
                 state['job_idx'] = len(in_progress_or_done)
 
-                        # Build a combined schedule for plotting
+            # Build a combined schedule for plotting
             combined_schedule = {}
             job_ids_set = {job.id for job in jobs}
             for machine in machine_states:
@@ -155,30 +157,10 @@ def simulate_over_time(self,total_hours=168, disruption_rates=(0.05, 0.05, 0.05)
                 save_path=f"gantt_after_disruption_t{t}.png",
                 max_lateness=max_late
             )
-
-    # Calculate max lateness for this experiment
-    combined_schedule = {}
-    job_ids_set = {job.id for job in jobs}
-    for machine in machine_states:
-        actual_jobs = [
-            (j.id, j.start_time, j.end_time if j.status == 'finished' else (j.start_time + j.processing_time))
-            for j in machine_states[machine]['queue']
-            if j.status != 'not_started' and j.start_time is not None and j.id in job_ids_set
-        ]
-        if actual_jobs:
-            last_actual_job_id, _, last_actual_end = actual_jobs[-1]
-            last_job_obj = next((j for j in jobs if j.id == last_actual_job_id), None)
-            last_end = last_actual_end + (last_job_obj.changeover_time if last_job_obj else 0)
-        else:
-            last_end = 0
-
-        planned_jobs = []
-        combined_schedule[machine] = actual_jobs + planned_jobs
-
-    return calculate_max_lateness(combined_schedule, jobs)
+            return calculate_max_lateness(combined_schedule, jobs)
 
 class SimulationGUI:
-    def __init__(self, root):
+    def _init_(self, root):
         self.root = root
         self.root.title("Planning-Scheduling Simulation")
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
