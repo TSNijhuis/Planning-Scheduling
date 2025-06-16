@@ -1,6 +1,16 @@
 import random
 import copy
-from mainv2 import generate_jobs, assign_jobs_to_individual_machines, apply_additional_disruptions, schedule_machine, MACHINE_GROUPS
+from mainv2 import generate_jobs, assign_jobs_to_individual_machines, apply_additional_disruptions, schedule_machine, shifting_bottleneck_parallel, vns_optimization, MACHINE_GROUPS
+
+def extract_jobs(job_list):
+    """Ensure a flat list of Job objects, even if input is a list of tuples or strings."""
+    jobs = []
+    for item in job_list:
+        if hasattr(item, 'machine_type'):
+            jobs.append(item)
+        elif isinstance(item, tuple) and hasattr(item[0], 'machine_type'):
+            jobs.append(item[0])
+    return jobs
 
 def simulate_over_time(jobs, total_hours=168, disruption_rates=(0.05, 0.05, 0.05)):
     # disruption_rates: (demand, cancel, breakdown)
@@ -61,29 +71,49 @@ def simulate_over_time(jobs, total_hours=168, disruption_rates=(0.05, 0.05, 0.05
         disruption_occurred = False
 
         if disruption_type == 'demand':
-            jobs = apply_additional_disruptions(jobs, demand_rate=1, cancel_rate=0, breakdown_rate=0)
+            jobs = apply_additional_disruptions(jobs, demand_rate=1, cancel_rate=0, breakdown_rate=0, machine_assignments=machine_states)
             disruption_occurred = True
         elif disruption_type == 'cancel':
-            jobs = apply_additional_disruptions(jobs, demand_rate=0, cancel_rate=1, breakdown_rate=0)
+            jobs = apply_additional_disruptions(jobs, demand_rate=0, cancel_rate=1, breakdown_rate=0, machine_assignments=machine_states)
             disruption_occurred = True
         elif disruption_type == 'breakdown':
-            jobs = apply_additional_disruptions(jobs, demand_rate=0, cancel_rate=0, breakdown_rate=1)
+            jobs = apply_additional_disruptions(jobs, demand_rate=0, cancel_rate=0, breakdown_rate=1,machine_assignments=machine_states)
             disruption_occurred = True
 
         # 3. If disruption occurred, reschedule not_started jobs
         if disruption_occurred:
             print(f"Disruption at t={t}, rescheduling not started jobs.")
+            print(f"Total jobs at t={t}: {len(jobs)}")
+            print(f"Not started jobs at t={t}: {[j.id for j in jobs if j.status == 'not_started']}")
+            print(f"In progress jobs at t={t}: {[j.id for j in jobs if j.status == 'in_progress']}")
+            print(f"Finished jobs at t={t}: {[j.id for j in jobs if j.status == 'finished']}")
             unfinished_jobs = [j for j in jobs if j.status == 'not_started']
-            new_assignments = assign_jobs_to_individual_machines(unfinished_jobs)
+
+            # --- Use shifting bottleneck heuristic and VNS for rescheduling ---
+            new_assignments = shifting_bottleneck_parallel(unfinished_jobs)
+            jobs_for_vns = [job for job_list in new_assignments.values() for job in job_list]
+            print("jobs_for_vns types:", [type(j) for j in jobs_for_vns[:5]])
+
+            # Always extract Job objects robustly
+            jobs_for_vns = extract_jobs(jobs_for_vns)
+
+            vns_result = vns_optimization(jobs_for_vns, iterations=100)
+            print("vns_result types:", [type(j) for j in vns_result[:5]])
+
+            # If vns_result is a list of tuples, extract jobs:
+            if vns_result and isinstance(vns_result[0], tuple):
+                jobs_after_vns = extract_jobs(vns_result)
+                new_assignments = assign_jobs_to_individual_machines(jobs_after_vns)
+            else:
+                new_assignments = vns_result  
+
             # Update machine queues for not_started jobs only
             for machine in machine_states:
-                # Keep in-progress and finished jobs at the front, update queue for not_started jobs
                 in_progress = [j for j in machine_states[machine]['queue'] if j.status != 'not_started']
                 machine_states[machine]['queue'] = in_progress + new_assignments.get(machine, [])
-                # Reset job_idx to first not_started job after in-progress/finished
                 state = machine_states[machine]
                 state['job_idx'] = len(in_progress)
-    
+            
     # Print summary
     print("\n=== Simulation finished ===")
     for job in jobs:

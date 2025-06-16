@@ -58,6 +58,8 @@ def generate_jobs():
 
 # Assign jobs to individual machines in each group
 def assign_jobs_to_individual_machines(jobs):
+    if not jobs:
+        return defaultdict(list)
     machine_assignments = defaultdict(list)
     machine_types = set(job.machine_type for job in jobs)
     machine_indices = {mt: [f"{mt}_{i}" for i in range(MACHINE_GROUPS[mt]['num_machines'])] for mt in machine_types}
@@ -104,6 +106,8 @@ def schedule_machine(machine_jobs):
 
 # Shifting Bottleneck Heuristic with parallel machines
 def shifting_bottleneck_parallel(jobs):
+    if not jobs:
+        return {}
     machine_assignments = assign_jobs_to_individual_machines(jobs)
     all_machines = list(machine_assignments.keys())
     improved = True
@@ -176,11 +180,11 @@ def shifting_bottleneck_parallel(jobs):
     return final_schedule
 
 # Apply additional disruptions
-def apply_additional_disruptions(jobs, demand_rate=1, cancel_rate=1, breakdown_rate=1):
+def apply_additional_disruptions(jobs, demand_rate=1, cancel_rate=1, breakdown_rate=1, machine_assignments=None):
     # --- Unexpected Demand ---
     if random.random() < demand_rate:
         machine_types = ['140 cm', '300 cm', 'Jacquard']
-        probs = [0.564, 0.360, 0.075]
+        probs = [0.564, 0.360, 0.076]
         machine_type = np.random.choice(machine_types, p=probs)
         prod_speed = MACHINE_GROUPS[machine_type]['production_speed']
         mean_order_size = 400
@@ -189,7 +193,7 @@ def apply_additional_disruptions(jobs, demand_rate=1, cancel_rate=1, breakdown_r
         order_size = max(int(np.random.normal(mean_order_size, std_order_size)), min_order_size)
         proc_time = int(order_size / prod_speed)
         changeover_time = 3 if random.random() < 0.8 else 24
-        due_date = int(proc_time + random.gauss(6, 2))
+        due_date = 168
         new_job_id = f"NEW{random.randint(100,999)}"
         jobs.append(Job(new_job_id, machine_type, proc_time, changeover_time, due_date))
         print(f"Unexpected demand: Added job {new_job_id} ({machine_type}, {order_size}m, {proc_time}h) to jobs list")
@@ -201,16 +205,32 @@ def apply_additional_disruptions(jobs, demand_rate=1, cancel_rate=1, breakdown_r
         print(f"Job cancellation: Removed job {cancel_job.id} ({cancel_job.machine_type}) from jobs list")
 
     # --- Machine Breakdown ---
-    if random.random() < breakdown_rate:
+    if machine_assignments and random.random() < breakdown_rate:
         machine_types = ['140 cm', '300 cm', 'Jacquard']
         breakdown_type = random.choice(machine_types)
-        # Simulate breakdown by increasing processing time for all jobs of that type
-        breakdown_factor = random.uniform(1.2, 1.5)  # 20-50% slower
-        affected_jobs = [job for job in jobs if job.machine_type == breakdown_type]
-        for job in affected_jobs:
-            old_time = job.processing_time
-            job.processing_time = int(job.processing_time * breakdown_factor)
-            print(f"Machine breakdown: Increased proc_time for job {job.id} ({breakdown_type}) from {old_time}h to {job.processing_time}h")
+        # Find all machines of this type
+        machines_of_type = [m for m in machine_assignments if m.startswith(breakdown_type)]
+        if machines_of_type:
+            broken_machine = random.choice(machines_of_type)
+            # Access the job queue correctly
+            queue = machine_assignments[broken_machine]['queue'] if isinstance(machine_assignments[broken_machine], dict) else machine_assignments[broken_machine]
+            broken_jobs = [job for job in queue if job.status != 'finished']
+            print(f"Machine breakdown: {broken_machine} is down. Rescheduling {len(broken_jobs)} jobs.")
+            # Remove jobs from the broken machine's queue
+            machine_assignments[broken_machine]['queue'] = [job for job in queue if job.status == 'finished']
+            # Reschedule broken jobs to other machines of the same type
+            other_machines = [m for m in machines_of_type if m != broken_machine]
+            for job in broken_jobs:
+                if other_machines:
+                    # Assign to the machine with the fewest jobs in its queue
+                    target = min(other_machines, key=lambda m: len(machine_assignments[m]['queue']))
+                    machine_assignments[target]['queue'].append(job)
+                    print(f"Rescheduled job {job.id} to {target}")
+            # Optionally, remove the broken machine from assignments
+            # del machine_assignments[broken_machine]
+    elif random.random() < breakdown_rate:
+        # Fallback: if no machine_assignments provided, do nothing or print warning
+        print("Warning: Machine breakdown requested but no machine_assignments provided.")
 
     return jobs
 
